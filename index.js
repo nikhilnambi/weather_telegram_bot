@@ -1,73 +1,99 @@
 require("dotenv").config();
+const express = require("express");
 const TelegramBot = require("node-telegram-bot-api");
 const axios = require("axios");
-const express = require("express");
 
-// const app = express();
-// const PORT = process.env.PORT || 3000;
+const app = express();
+const PORT = process.env.PORT || 3000;
+const TOKEN = process.env.BOT_TOKEN;
 
-// // Basic Express server so Render sees an open port
-// app.get("/", (req, res) => res.send("Telegram Weather Bot is running!"));
+// Middleware to parse JSON bodies
+app.use(express.json());
 
-// app.listen(PORT, () => {
-//     console.log(`Server listening on port ${PORT}`);
-// });
+// Create Telegram bot without polling
+const bot = new TelegramBot(TOKEN);
 
-// Create Telegram bot with pollingg
-const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
-
-// Log polling errors
-bot.on("polling_error", (error) => {
-    console.error("Polling error:", error);
-});
-
-// Start command
-bot.onText(/\/start/, (msg) => {
-    bot.sendMessage(
-        msg.chat.id,
-        "👋 Hi! Please type your city name to get current weather. For example: `London`, `Delhi`, or `Tokyo`.",
-        {
-            parse_mode: "Markdown",
-        }
-    );
-});
-
-// Listen for any text messages (city names)
-bot.on("message", async (msg) => {
-    const chatId = msg.chat.id;
-    const city = msg.text;
-
-    // Ignore commands (starting with '/')
-    if (city.startsWith("/")) return;
+// Telegram will send updates here
+app.post(`/webhook/${TOKEN}`, async (req, res) => {
+    const update = req.body;
 
     try {
-        const url = `https://wttr.in/${encodeURIComponent(city)}?format=j1`;
-        const response = await axios.get(url);
+        if (update.message) {
+            const msg = update.message;
+            const chatId = msg.chat.id;
 
-        // Check if weather data exists
-        if (
-            response.data &&
-            response.data.current_condition &&
-            response.data.current_condition.length > 0
-        ) {
-            const weather = response.data.current_condition[0];
-            const reply = `🌤️ Weather in ${city}:
+            // Handle /start command
+            if (msg.text && msg.text.toLowerCase() === "/start") {
+                await bot.sendMessage(
+                    chatId,
+                    "👋 Hi! Please type your city name to get current weather. For example: `London`, `Delhi`, or `Tokyo`.",
+                    { parse_mode: "Markdown" }
+                );
+                return res.sendStatus(200);
+            }
+
+            // Ignore non-text messages or commands
+            if (!msg.text || msg.text.startsWith("/")) {
+                return res.sendStatus(200);
+            }
+
+            // Fetch weather data from wttr.in
+            const city = msg.text;
+            try {
+                const url = `https://wttr.in/${encodeURIComponent(
+                    city
+                )}?format=j1`;
+                const response = await axios.get(url);
+
+                if (
+                    response.data &&
+                    response.data.current_condition &&
+                    response.data.current_condition.length > 0
+                ) {
+                    const weather = response.data.current_condition[0];
+                    const reply = `🌤️ Weather in ${city}:
 🌡️ Temp: ${weather.temp_C}°C
 🤔 Feels like: ${weather.FeelsLikeC}°C
 📌 Condition: ${weather.weatherDesc[0].value}`;
 
-            bot.sendMessage(chatId, reply);
-        } else {
-            bot.sendMessage(
-                chatId,
-                `❌ Could not find weather for "${city}". Please try another city name.`
-            );
+                    await bot.sendMessage(chatId, reply);
+                } else {
+                    await bot.sendMessage(
+                        chatId,
+                        `❌ Could not find weather for "${city}". Please try another city name.`
+                    );
+                }
+            } catch (error) {
+                await bot.sendMessage(
+                    chatId,
+                    `❌ Could not fetch weather data. Please try again later.`
+                );
+            }
         }
+
+        // Respond OK to Telegram
+        res.sendStatus(200);
+    } catch (error) {
+        console.error("Webhook error:", error);
+        res.sendStatus(500);
+    }
+});
+
+// Simple health check endpoint
+app.get("/", (req, res) => {
+    res.send("Telegram Weather Bot (Webhook) is running!");
+});
+
+app.listen(PORT, async () => {
+    console.log(`Server listening on port ${PORT}`);
+
+    // Set Telegram webhook URL dynamically on server start
+    const url = `https://weather-telegram-bot-160q.onrender.com
+    }/webhook/${TOKEN}`;
+    try {
+        await bot.setWebHook(url);
+        console.log("Webhook set to:", url);
     } catch (err) {
-        console.error(err);
-        bot.sendMessage(
-            chatId,
-            `❌ Could not find weather for "${city}". Please try another city name.`
-        );
+        console.error("Error setting webhook:", err);
     }
 });
