@@ -1,34 +1,15 @@
 require("dotenv").config();
 const TelegramBot = require("node-telegram-bot-api");
 const axios = require("axios");
+const nlp = require("compromise");
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
-// Cache urban areas to avoid frequent API calls
-let urbanAreasCache = null;
-
-// Fetch and cache urban areas from Teleport API
-async function getUrbanAreas() {
-    if (urbanAreasCache) return urbanAreasCache;
-
-    try {
-        const response = await axios.get(
-            "https://api.teleport.org/api/urban_areas/"
-        );
-        urbanAreasCache = response.data._links["ua:item"].map((area) =>
-            area.name.toLowerCase()
-        );
-        return urbanAreasCache;
-    } catch (err) {
-        console.error("Failed to fetch urban areas:", err);
-        return [];
-    }
-}
-
-// Check if city exists in urban areas list
-async function isValidCity(city) {
-    const urbanAreas = await getUrbanAreas();
-    return urbanAreas.includes(city.toLowerCase());
+// Function to check if text is likely a city using compromise
+function isProbablyCity(text) {
+    const doc = nlp(text);
+    const places = doc.places().out("array");
+    return places.length > 0;
 }
 
 bot.onText(/\/start/, (msg) => {
@@ -41,22 +22,21 @@ bot.onText(/\/start/, (msg) => {
 
 bot.on("message", async (msg) => {
     const chatId = msg.chat.id;
-    const city = msg.text;
+    const city = msg.text.trim();
 
-    // Ignore non-text messages or commands starting with '/'
-    if (!city || city.startsWith("/")) return;
+    // Ignore commands
+    if (city.startsWith("/")) return;
+
+    // Use compromise to check if it's likely a city
+    if (!isProbablyCity(city)) {
+        bot.sendMessage(
+            chatId,
+            `❌ That doesn't look like a valid city name. Please try again.`
+        );
+        return;
+    }
 
     try {
-        const validity = await isValidCity(city);
-
-        if (!validity) {
-            return bot.sendMessage(
-                chatId,
-                `❌ "${city}" is not recognized as a valid city. Please try another city name.`
-            );
-        }
-
-        // Fetch weather info from wttr.in
         const url = `https://wttr.in/${encodeURIComponent(city)}?format=j1`;
         const response = await axios.get(url);
         const weather = response.data.current_condition[0];
@@ -68,10 +48,9 @@ bot.on("message", async (msg) => {
 
         bot.sendMessage(chatId, reply);
     } catch (err) {
-        console.error("Error handling message:", err);
         bot.sendMessage(
             chatId,
-            `❌ Sorry, something went wrong. Please try again later.`
+            `❌ Could not find weather for "${city}". Please try another city name.`
         );
     }
 });
