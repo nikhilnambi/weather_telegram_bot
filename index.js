@@ -3,17 +3,17 @@ const TelegramBot = require("node-telegram-bot-api");
 const axios = require("axios");
 const express = require("express");
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+// const app = express();
+// const PORT = process.env.PORT || 3000;
 
-// Basic Express server so Render sees an open port
-app.get("/", (req, res) => res.send("Telegram Weather Bot is running!"));
+// // Basic Express server so Render sees an open port
+// app.get("/", (req, res) => res.send("Telegram Weather Bot is running!"));
 
-app.listen(PORT, () => {
-    console.log(`Server listening on port ${PORT}`);
-});
+// app.listen(PORT, () => {
+//     console.log(`Server listening on port ${PORT}`);
+// });
 
-// Create Telegram bot with polling
+// Create Telegram bot with pollingg
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
 // Log polling errors
